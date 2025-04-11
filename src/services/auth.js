@@ -2,12 +2,26 @@ import {
   getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  initializeAuth,
+  getReactNativePersistence,
 } from "firebase/auth";
+import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
 import { initializeApp } from "firebase/app";
 import { firebaseConfig } from "../firebase";
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+let auth;
+try {
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+  });
+} catch (error) {
+  if (error.code === "auth/already-initialized") {
+    auth = getAuth(app);
+  } else {
+    throw error;
+  }
+}
 
 // Mapeo de errores de Firebase a mensajes amigables
 const firebaseErrorMessages = {

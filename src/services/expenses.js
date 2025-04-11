@@ -5,9 +5,10 @@ import {
   addDoc,
   doc,
   getDocs,
+  updateDoc,
+  deleteDoc,
   query,
   where,
-  orderBy,
   serverTimestamp,
   writeBatch,
 } from "firebase/firestore";
@@ -20,64 +21,128 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 const OFFLINE_EXPENSES_KEY = "@offline_expenses";
+const OFFLINE_EXPENSES_TO_DELETE = "@offline_expenses_to_delete";
 
 // Guardar gasto (con relación a categoría)
 export const saveExpense = async (expense, isOnline) => {
-  if (!expense.categoryId || !expense.travelId) {
-    throw new Error("Expense must have categoryId and travelId");
+  if (!expense.categoryId || !expense.userId || !expense.amount) {
+    throw new Error("Expense requires categoryId, userId and amount");
   }
 
   if (isOnline) {
-    await saveFirestore(expense);
+    return await saveExpenseFirestore(expense);
   } else {
-    await saveLocal(expense);
+    return await saveExpenseLocal(expense);
   }
 };
+
+// Actualizar gasto (online/offline)
+export const updateExpense = async (userId, expenseId, updates, isOnline) => {
+  if (!expenseId || !userId) {
+    throw new Error("Expense ID and userId are required");
+  }
+
+  if (isOnline) {
+    await updateExpenseFirestore(userId, expenseId, updates);
+  } else {
+    await updateExpenseLocal(expenseId, updates);
+  }
+};
+
+// Eliminar gasto (online/offline)
+export const deleteExpense = async (userId, expenseId, isOnline) => {
+  if (!expenseId || !userId) {
+    throw new Error("Expense ID and userId are required");
+  }
+
+  if (isOnline) {
+    await deleteExpenseFirestore(userId, expenseId);
+  } else {
+    await deleteExpenseLocal(expenseId);
+  }
+};
+
+// Obtener gastos por categoría
 export const getExpensesByCategory = async (userId, categoryId) => {
   try {
-    const expensesRef = collection(db, "users", userId, "expenses");
-    const q = query(expensesRef, where("categoryId", "==", categoryId));
+    // Primero intentamos obtener de Firestore
+    const onlineExpenses = await fetchExpensesFirestore(userId, categoryId);
 
-    const snapshot = await getDocs(q);
-    const expenses = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    // Si hay datos online, los devolvemos
+    if (onlineExpenses.length > 0) {
+      // Combinamos con los locales no sincronizados
+      const localExpenses = await fetchExpensesLocal();
+      const unsyncedExpenses = localExpenses.filter(
+        (e) => !e.isSynced && e.categoryId === categoryId
+      );
+      return [...onlineExpenses, ...unsyncedExpenses];
+    }
 
-    // Ordenar localmente si es necesario
-    return expenses.sort(
-      (a, b) =>
-        new Date(b.createdAt?.seconds * 1000 || b.createdAt) -
-        new Date(a.createdAt?.seconds * 1000 || a.createdAt)
-    );
+    // Si no hay datos online, devolvemos los locales
+    return await fetchExpensesLocal(categoryId);
   } catch (error) {
     console.error("Error getting expenses by category:", error);
-    return [];
+    return await fetchExpensesLocal(categoryId); // Fallback a local si hay error
   }
 };
 
 // Funciones Firebase
-const saveFirestore = async (expense) => {
+const saveExpenseFirestore = async (expense) => {
   try {
     const expensesRef = collection(db, "users", expense.userId, "expenses");
-    await addDoc(expensesRef, {
+    const docRef = await addDoc(expensesRef, {
       ...expense,
       categoryId: expense.categoryId,
       isSynced: true,
       createdAt: serverTimestamp(),
     });
+    return { id: docRef.id, ...expense, isSynced: true };
   } catch (error) {
     console.error("Error saving expense to Firestore:", error);
     throw error;
   }
 };
 
-const fetchFireStore = async (userId) => {
+const updateExpenseFirestore = async (userId, expenseId, updates) => {
+  try {
+    const expenseRef = doc(db, "users", userId, "expenses", expenseId);
+    await updateDoc(expenseRef, {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error("Error updating expense in Firestore:", error);
+    throw error;
+  }
+};
+
+const deleteExpenseFirestore = async (userId, expenseId) => {
+  try {
+    // Verifica si el ID es un ID de Firestore (longitud 20)
+    if (expenseId.length === 20) {
+      const expenseRef = doc(db, "users", userId, "expenses", expenseId);
+      await deleteDoc(expenseRef);
+    } else {
+      console.log(
+        "ID local detectado, eliminación solo en almacenamiento local"
+      );
+    }
+  } catch (error) {
+    console.error("Error deleting expense from Firestore:", error);
+    throw error;
+  }
+};
+
+const fetchExpensesFirestore = async (userId, categoryId = null) => {
   try {
     const expensesRef = collection(db, "users", userId, "expenses");
-    const q = query(expensesRef, orderBy("createdAt", "desc"));
-    const snapshot = await getDocs(q);
+    let q = query(expensesRef);
 
+    if (categoryId) {
+      q = query(expensesRef, where("categoryId", "==", categoryId));
+    }
+
+    const snapshot = await getDocs(q);
     return snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
@@ -87,78 +152,196 @@ const fetchFireStore = async (userId) => {
     return [];
   }
 };
-// Funciones locales (se mantienen igual)
-const saveLocal = async (expense) => {
+
+// Funciones locales
+const saveExpenseLocal = async (expense) => {
   try {
     const existingExpenses = await AsyncStorage.getItem(OFFLINE_EXPENSES_KEY);
     const parsedExpenses = existingExpenses ? JSON.parse(existingExpenses) : [];
-    const updatedExpenses = [
-      ...parsedExpenses,
-      {
-        ...expense,
-        isSynced: false,
-        createdAt: new Date().toISOString(),
-      },
-    ];
+    const newExpense = {
+      ...expense,
+      id: Date.now().toString(), // ID temporal
+      isSynced: false,
+      createdAt: new Date().toISOString(),
+    };
+    const updatedExpenses = [...parsedExpenses, newExpense];
 
     await AsyncStorage.setItem(
       OFFLINE_EXPENSES_KEY,
       JSON.stringify(updatedExpenses)
     );
+    return newExpense;
   } catch (error) {
     console.error("Error saving expense locally:", error);
     throw error;
   }
 };
 
-const fetchLocal = async (categoryId = null) => {
+const updateExpenseLocal = async (expenseId, updates) => {
+  try {
+    const expenses = await fetchExpensesLocal();
+    const updatedExpenses = expenses.map((expense) =>
+      expense.id === expenseId
+        ? { ...expense, ...updates, isSynced: false }
+        : expense
+    );
+
+    await AsyncStorage.setItem(
+      OFFLINE_EXPENSES_KEY,
+      JSON.stringify(updatedExpenses)
+    );
+  } catch (error) {
+    console.error("Error updating expense locally:", error);
+    throw error;
+  }
+};
+
+const deleteExpenseLocal = async (expenseId) => {
+  try {
+    // Guardamos en una lista separada para eliminación posterior
+    const toDelete = await AsyncStorage.getItem(OFFLINE_EXPENSES_TO_DELETE);
+    const parsedToDelete = toDelete ? JSON.parse(toDelete) : [];
+
+    // Solo agregamos a la lista de eliminación si es un ID de Firestore
+    if (expenseId.length === 20) {
+      await AsyncStorage.setItem(
+        OFFLINE_EXPENSES_TO_DELETE,
+        JSON.stringify([...parsedToDelete, expenseId])
+      );
+    }
+
+    // Eliminamos de la lista principal (tanto Firestore como locales)
+    const expenses = await fetchExpensesLocal();
+    const updatedExpenses = expenses.filter(
+      (expense) => expense.id !== expenseId
+    );
+    await AsyncStorage.setItem(
+      OFFLINE_EXPENSES_KEY,
+      JSON.stringify(updatedExpenses)
+    );
+  } catch (error) {
+    console.error("Error deleting expense locally:", error);
+    throw error;
+  }
+};
+
+const fetchExpensesLocal = async (categoryId = null) => {
   try {
     const expenses = await AsyncStorage.getItem(OFFLINE_EXPENSES_KEY);
     const parsedExpenses = expenses ? JSON.parse(expenses) : [];
 
-    return categoryId
-      ? parsedExpenses.filter((e) => e.categoryId === categoryId)
-      : parsedExpenses;
+    if (categoryId) {
+      return parsedExpenses.filter(
+        (expense) => expense.categoryId === categoryId
+      );
+    }
+
+    return parsedExpenses;
   } catch (error) {
     console.error("Error fetching local expenses:", error);
     return [];
   }
 };
 
-// Sincronización
+// Sincronización de datos locales con la nube
 export const syncLocalExpenses = async (userId) => {
-  const localExpenses = await fetchLocal();
-  if (localExpenses.length === 0) return;
-
   try {
-    const batch = writeBatch(db);
-    const expensesRef = collection(db, "users", userId, "expenses");
+    // 1. Sincronizar gastos nuevos
+    const localExpenses = await fetchExpensesLocal();
+    const unsyncedExpenses = localExpenses.filter((e) => !e.isSynced);
 
-    localExpenses.forEach((expense) => {
-      const expenseRef = doc(expensesRef);
-      batch.set(expenseRef, {
-        ...expense,
-        isSynced: true,
-        createdAt: serverTimestamp(),
-      });
-    });
+    if (unsyncedExpenses.length > 0) {
+      const batch = writeBatch(db);
+      const expensesRef = collection(db, "users", userId, "expenses");
 
-    await batch.commit();
-    await AsyncStorage.removeItem(OFFLINE_EXPENSES_KEY);
+      for (const expense of unsyncedExpenses) {
+        const expenseRef = doc(expensesRef);
+        batch.set(expenseRef, {
+          ...expense,
+          isSynced: true,
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+      await AsyncStorage.setItem(
+        OFFLINE_EXPENSES_KEY,
+        JSON.stringify(localExpenses.map((e) => ({ ...e, isSynced: true })))
+      );
+    }
+
+    // 2. Sincronizar eliminaciones
+    const toDelete = await AsyncStorage.getItem(OFFLINE_EXPENSES_TO_DELETE);
+    const parsedToDelete = toDelete ? JSON.parse(toDelete) : [];
+
+    if (parsedToDelete.length > 0) {
+      const deleteBatch = writeBatch(db);
+      let hasDeletes = false;
+
+      for (const expenseId of parsedToDelete) {
+        // Verificamos nuevamente que sea un ID de Firestore
+        if (expenseId.length === 20) {
+          const expenseRef = doc(db, "users", userId, "expenses", expenseId);
+          deleteBatch.delete(expenseRef);
+          hasDeletes = true;
+        }
+      }
+
+      if (hasDeletes) {
+        await deleteBatch.commit();
+      }
+      await AsyncStorage.removeItem(OFFLINE_EXPENSES_TO_DELETE);
+    }
+
+    // 3. Sincronizar actualizaciones
+    const updatedExpenses = localExpenses.filter(
+      (expense) =>
+        expense.isSynced && expense.updatedAt && !expense.syncedUpdate
+    );
+
+    if (updatedExpenses.length > 0) {
+      const updateBatch = writeBatch(db);
+
+      for (const expense of updatedExpenses) {
+        try {
+          const expenseRef = doc(db, "users", userId, "expenses", expense.id);
+          updateBatch.update(expenseRef, {
+            ...expense,
+            updatedAt: serverTimestamp(),
+          });
+
+          // Marcamos como sincronizado
+          expense.syncedUpdate = true;
+        } catch (error) {
+          console.warn(`Could not update expense ${expense.id}`, error);
+        }
+      }
+
+      try {
+        await updateBatch.commit();
+        // Actualizamos el almacenamiento local
+        await AsyncStorage.setItem(
+          OFFLINE_EXPENSES_KEY,
+          JSON.stringify(localExpenses)
+        );
+      } catch (error) {
+        console.error("Error syncing expense updates:", error);
+      }
+    }
   } catch (error) {
     console.error("Error syncing expenses:", error);
+    throw error;
   }
 };
 
 // Conversión de moneda
 export const convertAndSaveExpense = async (expense, userCurrency) => {
-  if (!expense.categoryId) {
+  if (!expense?.categoryId) {
     throw new Error("Expense must have a categoryId");
   }
 
   if (expense.currency === userCurrency) {
-    await saveExpense(expense, true);
-    return;
+    return await saveExpense(expense, true);
   }
 
   try {
@@ -168,7 +351,11 @@ export const convertAndSaveExpense = async (expense, userCurrency) => {
       expense.amount
     );
 
-    await saveExpense(
+    if (convertedAmount === 0) {
+      throw new Error("La conversión retornó 0");
+    }
+
+    return await saveExpense(
       {
         ...expense,
         amount: convertedAmount,
@@ -176,14 +363,18 @@ export const convertAndSaveExpense = async (expense, userCurrency) => {
         originalCurrency: expense.currency,
         currency: userCurrency,
         isSynced: true,
+        conversionRate: convertedAmount / expense.amount,
       },
       true
     );
   } catch (error) {
-    console.error("Error converting currency:", error);
-    await saveExpense(
+    console.error("Error en convertAndSaveExpense:", error);
+
+    // Guardar el gasto con la moneda original si falla la conversión
+    return await saveExpense(
       {
         ...expense,
+        conversionError: error.message,
         isSynced: false,
       },
       false

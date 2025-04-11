@@ -1,8 +1,10 @@
 import React, { useContext, useState, useEffect } from "react";
-import { TouchableOpacity, TextInput, Text, Alert } from "react-native";
+import { TouchableOpacity, TextInput, Text, View } from "react-native";
 import { AuthContext } from "../contexts/AuthContext";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
+import { styles } from "../styles/AuthForm.styles";
+
 export default AuthForm = () => {
   const navigation = useNavigation();
   const [email, setEmail] = useState("");
@@ -12,9 +14,13 @@ export default AuthForm = () => {
 
   useEffect(() => {
     if (user) {
-      navigation.navigate("Categories");
+      navigation.navigate("App", {
+        screen: "Main",
+        params: { screen: "Travels" },
+      });
     }
   }, [user, navigation]);
+
   useEffect(() => {
     if (error) {
       Alert.alert("Error", error);
@@ -37,52 +43,54 @@ export default AuthForm = () => {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={{ padding: 20 }}>
+      <SafeAreaView style={styles.container}>
+        <Text style={styles.title}>Bienvenido</Text>
+        
+        <Text style={styles.inputLabel}>Correo electrónico</Text>
         <TextInput
-          placeholder="Email"
+          placeholder="ejemplo@correo.com"
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
-          style={{ marginBottom: 10, padding: 10, borderWidth: 1 }}
+          style={styles.input}
         />
+
+        <Text style={styles.inputLabel}>Contraseña</Text>
         <TextInput
-          placeholder="Contraseña"
+          placeholder="Ingresa tu contraseña"
           value={password}
           onChangeText={setPassword}
           secureTextEntry
-          style={{ marginBottom: 10, padding: 10, borderWidth: 1 }}
+          style={styles.input}
         />
 
-        {/* Botón de Iniciar Sesión */}
+        {error && <Text style={styles.errorText}>{error}</Text>}
+
         <TouchableOpacity
-          onPress={handleLogin} // Función específica para login
+          onPress={handleLogin}
           disabled={loading}
-          style={{
-            backgroundColor: loading ? "#cccccc" : "#007bff",
-            padding: 15,
-            borderRadius: 5,
-            alignItems: "center",
-            marginBottom: 10,
-          }}
+          style={[
+            styles.button,
+            styles.loginButton,
+            loading && styles.disabledButton,
+          ]}
         >
-          <Text style={{ color: "white" }}>
+          <Text style={styles.buttonText}>
             {loading ? "Procesando..." : "Iniciar Sesión"}
           </Text>
         </TouchableOpacity>
 
-        {/* Botón de Registrarse */}
         <TouchableOpacity
-          onPress={handleRegister} // Función específica para registro
+          onPress={handleRegister}
           disabled={loading}
-          style={{
-            backgroundColor: loading ? "#cccccc" : "#28a745",
-            padding: 15,
-            borderRadius: 5,
-            alignItems: "center",
-          }}
+          style={[
+            styles.button,
+            styles.registerButton,
+            loading && styles.disabledButton,
+          ]}
         >
-          <Text style={{ color: "white" }}>
+          <Text style={styles.buttonText}>
             {loading ? "Procesando..." : "Registrarse"}
           </Text>
         </TouchableOpacity>

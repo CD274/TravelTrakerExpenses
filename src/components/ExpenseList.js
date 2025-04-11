@@ -1,21 +1,27 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useContext, useState, useEffect, useLayoutEffect } from "react";
 import {
   View,
   Text,
   FlatList,
   TouchableOpacity,
-  StyleSheet,
   TextInput,
-  Alert,
   Modal,
-  Button,
+  Alert,
 } from "react-native";
 import { AuthContext } from "../contexts/AuthContext";
-import { getExpensesByCategory, saveExpense } from "../services/expenses";
-import { useRoute, useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { styles } from "../styles/ExpenseList.styles";
+import Icon from "react-native-vector-icons/MaterialIcons";
+import {
+  getExpensesByCategory,
+  convertAndSaveExpense,
+  syncLocalExpenses,
+  updateExpense,
+  deleteExpense,
+} from "../services/expenses";
 
-export default function CategoryExpensesScreen() {
-  const { user } = useContext(AuthContext);
+const ExpenseList = () => {
+  const { user, userCurrency, updateUserCurrency } = useContext(AuthContext);
   const route = useRoute();
   const navigation = useNavigation();
   const { categoryId, categoryName, categoryColor } = route.params;
@@ -25,14 +31,44 @@ export default function CategoryExpensesScreen() {
     description: "",
     amount: "",
     categoryId: categoryId,
+    currency: null,
   });
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editDescription, setEditDescription] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [expenseToDelete, setExpenseToDelete] = useState(null);
+  const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
+  const [selectedCurrency, setSelectedCurrency] = useState(userCurrency || "");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Cargar gastos al iniciar
   useEffect(() => {
-    loadExpenses();
-  }, [user, categoryId]);
+    if (user && !userCurrency) {
+      Alert.alert(
+        "Configuración requerida",
+        "Para comenzar a usar la aplicación, por favor configura tu moneda base en Ajustes",
+        [
+          {
+            text: "Configurar ahora",
+            onPress: () => navigation.navigate("Settings"),
+          },
+          {
+            text: "Más tarde",
+            onPress: () => navigation.goBack(),
+            style: "cancel",
+          },
+        ]
+      );
+      return;
+    }
+
+    if (userCurrency) {
+      setNewExpense((prev) => ({ ...prev, currency: userCurrency }));
+      loadExpenses();
+    }
+  }, [user, userCurrency, categoryId]);
 
   const loadExpenses = async () => {
     if (!user) return;
@@ -50,6 +86,29 @@ export default function CategoryExpensesScreen() {
   };
 
   const handleAddExpense = async () => {
+    if (isSubmitting) return;
+    if (!userCurrency) {
+      Alert.alert(
+        "Moneda no configurada",
+        "Debes configurar tu moneda base en Ajustes antes de agregar gastos",
+        [
+          {
+            text: "Ir a Ajustes",
+            onPress: () => {
+              setIsModalVisible(false);
+              navigation.navigate("Settings");
+            },
+          },
+          {
+            text: "Cancelar",
+            onPress: () => setIsModalVisible(false),
+            style: "cancel",
+          },
+        ]
+      );
+      return;
+    }
+
     if (!newExpense.description.trim()) {
       Alert.alert("Error", "La descripción es requerida");
       return;
@@ -61,75 +120,189 @@ export default function CategoryExpensesScreen() {
     }
 
     try {
-      await saveExpense(
+      setIsSubmitting(true);
+      await convertAndSaveExpense(
         {
           ...newExpense,
           userId: user.uid,
           amount: parseFloat(newExpense.amount),
-          currency: "USD", // Puedes hacerlo configurable
           createdAt: new Date().toISOString(),
         },
-        true // online
+        userCurrency
       );
 
-      setNewExpense({ description: "", amount: "", categoryId });
+      setNewExpense({
+        description: "",
+        amount: "",
+        categoryId,
+        currency: userCurrency,
+      });
       setIsModalVisible(false);
-      loadExpenses(); // Recargar la lista
+      loadExpenses();
       Alert.alert("Éxito", "Gasto agregado correctamente");
     } catch (error) {
-      Alert.alert("Error", "No se pudo guardar el gasto");
+      Alert.alert("Error", error.message || "No se pudo guardar el gasto");
+      console.error(error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateExpense = async () => {
+    if (isSubmitting) return;
+
+    if (!editDescription.trim()) {
+      Alert.alert("Error", "La descripción es requerida");
+      return;
+    }
+
+    if (!editAmount || isNaN(parseFloat(editAmount))) {
+      Alert.alert("Error", "El monto debe ser un número válido");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await updateExpense(
+        user.uid,
+        editingId,
+        {
+          description: editDescription,
+          amount: parseFloat(editAmount),
+          updatedAt: new Date().toISOString(),
+        },
+        true
+      );
+
+      setEditingId(null);
+      setEditDescription("");
+      setEditAmount("");
+      loadExpenses();
+    } catch (error) {
+      Alert.alert("Error", "No se pudo actualizar el gasto");
+      console.error(error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const confirmDelete = (expenseId) => {
+    setExpenseToDelete(expenseId);
+    setDeleteConfirmVisible(true);
+  };
+
+  const handleDeleteExpense = async () => {
+    if (isSubmitting) return;
+
+    try {
+      setIsSubmitting(true);
+      await deleteExpense(user.uid, expenseToDelete, true);
+      setDeleteConfirmVisible(false);
+      setExpenseToDelete(null);
+      loadExpenses();
+    } catch (error) {
+      Alert.alert("Error", "No se pudo eliminar el gasto");
+      console.error(error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSync = async () => {
+    try {
+      await syncLocalExpenses(user.uid);
+      loadExpenses();
+      Alert.alert("Éxito", "Gastos sincronizados correctamente");
+    } catch (error) {
+      Alert.alert("Error", "No se pudieron sincronizar los gastos");
       console.error(error);
     }
   };
 
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={handleSync}
+          style={{ marginRight: 15 }}
+          disabled={isSubmitting}
+        >
+          <Icon name="sync" size={24} color={isSubmitting ? "#ccc" : "#007bff"} />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, isSubmitting]);
+
   const renderExpense = ({ item }) => (
     <TouchableOpacity
       style={[styles.expenseItem, { borderLeftColor: categoryColor }]}
-      onPress={() => {
-        // Aquí podrías implementar la edición
-      }}
+      onPress={() => setEditingId(item.id)}
+      onLongPress={() => confirmDelete(item.id)}
+      delayLongPress={1000}
     >
-      <View style={styles.expenseInfo}>
-        <Text style={styles.expenseDescription}>{item.description}</Text>
-        <Text style={styles.expenseDate}>
-          {new Date(
-            item.createdAt?.seconds * 1000 || item.createdAt
-          ).toLocaleDateString()}
-        </Text>
-      </View>
-      <Text style={styles.expenseAmount}>
-        ${parseFloat(item.amount).toFixed(2)}
-      </Text>
+      {editingId === item.id ? (
+        <View style={styles.editContainer}>
+          <TextInput
+            style={styles.editInput}
+            placeholder="Descripción"
+            value={editDescription}
+            onChangeText={setEditDescription}
+            autoFocus
+          />
+          <TextInput
+            style={styles.editAmountInput}
+            placeholder="Monto"
+            keyboardType="numeric"
+            value={editAmount}
+            onChangeText={setEditAmount}
+          />
+          <View style={styles.editButtons}>
+            <TouchableOpacity
+              style={styles.editSaveButton}
+              onPress={() => handleUpdateExpense()}
+            >
+              <Icon name="check" size={20} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.editCancelButton}
+              onPress={() => setEditingId(null)}
+            >
+              <Icon name="close" size={20} color="white" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.expenseContent}>
+          <View style={styles.expenseInfo}>
+            <Text style={styles.expenseDescription}>{item.description}</Text>
+            <Text style={styles.expenseDate}>
+              {new Date(
+                item.createdAt?.seconds * 1000 || item.createdAt
+              ).toLocaleDateString()}
+            </Text>
+          </View>
+          <Text style={styles.expenseAmount}>{item.amount}</Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backButton}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>{categoryName}</Text>
-        <View style={{ width: 30 }} />
-      </View>
-
       <FlatList
         data={expenses}
         renderItem={renderExpense}
-        keyExtractor={(item) => item.id || Math.random().toString()}
-        contentContainerStyle={styles.listContainer}
+        keyExtractor={(item) => item.id}
         refreshing={isRefreshing}
         onRefresh={loadExpenses}
-        ListEmptyComponent={
-          <Text style={styles.emptyText}>No hay gastos en esta categoría</Text>
-        }
+        style={styles.list}
       />
 
       <TouchableOpacity
-        style={[styles.addButton, { backgroundColor: categoryColor }]}
+        style={styles.fab}
         onPress={() => setIsModalVisible(true)}
       >
-        <Text style={styles.addButtonText}>+</Text>
+        <Icon name="add" style={styles.fabIcon} />
       </TouchableOpacity>
 
       <Modal
@@ -140,8 +313,6 @@ export default function CategoryExpensesScreen() {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Nuevo Gasto</Text>
-
             <TextInput
               style={styles.input}
               placeholder="Descripción"
@@ -150,138 +321,111 @@ export default function CategoryExpensesScreen() {
                 setNewExpense({ ...newExpense, description: text })
               }
             />
-
             <TextInput
               style={styles.input}
               placeholder="Monto"
-              keyboardType="numeric"
               value={newExpense.amount}
               onChangeText={(text) =>
                 setNewExpense({ ...newExpense, amount: text })
               }
+              keyboardType="numeric"
             />
-
-            <View style={styles.modalButtons}>
-              <Button
-                title="Cancelar"
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
                 onPress={() => setIsModalVisible(false)}
-                color="#e74c3c"
-              />
-              <Button
-                title="Guardar"
+              >
+                <Text style={styles.buttonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.addButton]}
                 onPress={handleAddExpense}
-                color="#2ecc71"
-              />
+                disabled={isSubmitting}
+              >
+                <Text style={styles.buttonText}>
+                  {isSubmitting ? "Guardando..." : "Guardar"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!editingId}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setEditingId(null)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <TextInput
+              style={styles.input}
+              placeholder="Descripción"
+              value={editDescription}
+              onChangeText={setEditDescription}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Monto"
+              value={editAmount}
+              onChangeText={setEditAmount}
+              keyboardType="numeric"
+            />
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
+                onPress={() => setEditingId(null)}
+              >
+                <Text style={styles.buttonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.addButton]}
+                onPress={() => handleUpdateExpense()}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.buttonText}>
+                  {isSubmitting ? "Guardando..." : "Actualizar"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={deleteConfirmVisible}
+        onRequestClose={() => setDeleteConfirmVisible(false)}
+      >
+        <View style={styles.centeredView}>
+          <View style={styles.confirmModal}>
+            <Text style={styles.confirmTitle}>¿Eliminar gasto?</Text>
+            <Text style={styles.confirmText}>
+              Esta acción no se puede deshacer
+            </Text>
+
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
+                onPress={() => setDeleteConfirmVisible(false)}
+              >
+                <Text style={styles.buttonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, styles.deleteButton]}
+                onPress={handleDeleteExpense}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.buttonText}>Eliminar</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
     </View>
   );
-}
+};
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-    padding: 16,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  backButton: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#3498db",
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    textAlign: "center",
-    flex: 1,
-  },
-  listContainer: {
-    flexGrow: 1,
-  },
-  expenseItem: {
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "white",
-    elevation: 2,
-    borderLeftWidth: 5,
-  },
-  expenseInfo: {
-    flex: 1,
-  },
-  expenseDescription: {
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  expenseDate: {
-    fontSize: 12,
-    color: "#777",
-    marginTop: 4,
-  },
-  expenseAmount: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#e74c3c",
-  },
-  emptyText: {
-    textAlign: "center",
-    marginTop: 32,
-    fontSize: 16,
-    color: "#777",
-  },
-  addButton: {
-    position: "absolute",
-    right: 20,
-    bottom: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 5,
-  },
-  addButtonText: {
-    fontSize: 30,
-    color: "white",
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  modalContent: {
-    width: "80%",
-    backgroundColor: "white",
-    borderRadius: 10,
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 5,
-    padding: 10,
-    marginBottom: 20,
-  },
-  modalButtons: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-  },
-});
+export default ExpenseList;
