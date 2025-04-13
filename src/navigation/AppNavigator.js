@@ -2,11 +2,11 @@ import { createStackNavigator } from "@react-navigation/stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigationContainer } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons"; // Asegúrate de instalar @expo/vector-icons
-import AuthForm from "../components/AuthForm";
-import TravelsScreen from "../components/TravelsList";
-import CategoriesScreen from "../components/CatList";
-import CategoryExpensesScreen from "../components/ExpenseList";
-import SettingsScreen from "../components/SettingsScreen"; // Crea este componente
+import AuthForm from "../screens/AuthForm";
+import TravelsScreen from "../screens/TravelsList";
+import CategoriesScreen from "../screens/CatList";
+import CategoryExpensesScreen from "../screens/ExpenseList";
+import SettingsScreen from "../screens/SettingsScreen"; // Crea este componente
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();

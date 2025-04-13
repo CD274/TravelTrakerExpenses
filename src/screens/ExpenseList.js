@@ -7,10 +7,13 @@ import {
   TextInput,
   Modal,
   Alert,
+  StyleSheet,
 } from "react-native";
+import { styles } from "../styles/ExpenseList.styles";
+import { Picker } from "@react-native-picker/picker";
 import { AuthContext } from "../contexts/AuthContext";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { styles } from "../styles/ExpenseList.styles";
+import { MaterialIcons } from "@expo/vector-icons";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import {
   getExpensesByCategory,
@@ -19,6 +22,7 @@ import {
   updateExpense,
   deleteExpense,
 } from "../services/expenses";
+import { currencies } from "../constants/currencies";
 
 const ExpenseList = () => {
   const { user, userCurrency, updateUserCurrency } = useContext(AuthContext);
@@ -31,7 +35,7 @@ const ExpenseList = () => {
     description: "",
     amount: "",
     categoryId: categoryId,
-    currency: null,
+    currency: userCurrency || "USD",
   });
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -41,7 +45,6 @@ const ExpenseList = () => {
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [expenseToDelete, setExpenseToDelete] = useState(null);
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
-  const [selectedCurrency, setSelectedCurrency] = useState(userCurrency || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -69,7 +72,23 @@ const ExpenseList = () => {
       loadExpenses();
     }
   }, [user, userCurrency, categoryId]);
-
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={handleSync}
+          style={{ marginRight: 15 }}
+          disabled={isSubmitting}
+        >
+          <MaterialIcons
+            name="sync"
+            size={24}
+            color={isSubmitting ? "#ccc" : "#007bff"}
+          />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, isSubmitting]);
   const loadExpenses = async () => {
     if (!user) return;
 
@@ -87,28 +106,6 @@ const ExpenseList = () => {
 
   const handleAddExpense = async () => {
     if (isSubmitting) return;
-    if (!userCurrency) {
-      Alert.alert(
-        "Moneda no configurada",
-        "Debes configurar tu moneda base en Ajustes antes de agregar gastos",
-        [
-          {
-            text: "Ir a Ajustes",
-            onPress: () => {
-              setIsModalVisible(false);
-              navigation.navigate("Settings");
-            },
-          },
-          {
-            text: "Cancelar",
-            onPress: () => setIsModalVisible(false),
-            style: "cancel",
-          },
-        ]
-      );
-      return;
-    }
-
     if (!newExpense.description.trim()) {
       Alert.alert("Error", "La descripción es requerida");
       return;
@@ -139,7 +136,6 @@ const ExpenseList = () => {
       });
       setIsModalVisible(false);
       loadExpenses();
-      Alert.alert("Éxito", "Gasto agregado correctamente");
     } catch (error) {
       Alert.alert("Error", error.message || "No se pudo guardar el gasto");
       console.error(error);
@@ -219,72 +215,46 @@ const ExpenseList = () => {
     }
   };
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity
-          onPress={handleSync}
-          style={{ marginRight: 15 }}
-          disabled={isSubmitting}
-        >
-          <Icon name="sync" size={24} color={isSubmitting ? "#ccc" : "#007bff"} />
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation, isSubmitting]);
-
   const renderExpense = ({ item }) => (
-    <TouchableOpacity
-      style={[styles.expenseItem, { borderLeftColor: categoryColor }]}
-      onPress={() => setEditingId(item.id)}
-      onLongPress={() => confirmDelete(item.id)}
-      delayLongPress={1000}
+    <View
+      style={[
+        styles.expenseItem,
+        { borderLeftWidth: 5, borderLeftColor: categoryColor },
+      ]}
     >
-      {editingId === item.id ? (
-        <View style={styles.editContainer}>
-          <TextInput
-            style={styles.editInput}
-            placeholder="Descripción"
-            value={editDescription}
-            onChangeText={setEditDescription}
-            autoFocus
-          />
-          <TextInput
-            style={styles.editAmountInput}
-            placeholder="Monto"
-            keyboardType="numeric"
-            value={editAmount}
-            onChangeText={setEditAmount}
-          />
-          <View style={styles.editButtons}>
-            <TouchableOpacity
-              style={styles.editSaveButton}
-              onPress={() => handleUpdateExpense()}
-            >
-              <Icon name="check" size={20} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.editCancelButton}
-              onPress={() => setEditingId(null)}
-            >
-              <Icon name="close" size={20} color="white" />
-            </TouchableOpacity>
-          </View>
+      <View style={styles.expenseContent}>
+        <View style={styles.expenseInfo}>
+          <Text style={styles.expenseDescription}>{item.description}</Text>
+          <Text style={styles.expenseDate}>
+            {new Date(
+              item.createdAt?.seconds * 1000 || item.createdAt
+            ).toLocaleDateString()}
+          </Text>
         </View>
-      ) : (
-        <View style={styles.expenseContent}>
-          <View style={styles.expenseInfo}>
-            <Text style={styles.expenseDescription}>{item.description}</Text>
-            <Text style={styles.expenseDate}>
-              {new Date(
-                item.createdAt?.seconds * 1000 || item.createdAt
-              ).toLocaleDateString()}
-            </Text>
-          </View>
-          <Text style={styles.expenseAmount}>{item.amount}</Text>
+        <View style={styles.expenseAmountContainer}>
+          <Text style={styles.expenseAmount}>{item.amount.toFixed(2)}</Text>
+          <Text style={styles.expenseCurrency}>{item.currency}</Text>
         </View>
-      )}
-    </TouchableOpacity>
+        <View style={styles.expenseActions}>
+          <TouchableOpacity
+            onPress={() => {
+              setEditingId(item.id);
+              setEditDescription(item.description);
+              setEditAmount(item.amount.toString());
+            }}
+            style={styles.actionButton}
+          >
+            <Icon name="edit" size={20} color="#555" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => confirmDelete(item.id)}
+            style={styles.actionButton}
+          >
+            <Icon name="delete" size={20} color="#e74c3c" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
   );
 
   return (
@@ -296,6 +266,9 @@ const ExpenseList = () => {
         refreshing={isRefreshing}
         onRefresh={loadExpenses}
         style={styles.list}
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>No hay gastos registrados</Text>
+        }
       />
 
       <TouchableOpacity
@@ -305,6 +278,7 @@ const ExpenseList = () => {
         <Icon name="add" style={styles.fabIcon} />
       </TouchableOpacity>
 
+      {/* Modal para agregar nuevo gasto */}
       <Modal
         visible={isModalVisible}
         animationType="slide"
@@ -313,6 +287,8 @@ const ExpenseList = () => {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Agregar Gasto</Text>
+
             <TextInput
               style={styles.input}
               placeholder="Descripción"
@@ -321,6 +297,7 @@ const ExpenseList = () => {
                 setNewExpense({ ...newExpense, description: text })
               }
             />
+
             <TextInput
               style={styles.input}
               placeholder="Monto"
@@ -330,6 +307,17 @@ const ExpenseList = () => {
               }
               keyboardType="numeric"
             />
+
+            <TouchableOpacity
+              style={styles.currencySelector}
+              onPress={() => setCurrencyModalVisible(true)}
+            >
+              <Text style={styles.currencyText}>
+                Moneda: {newExpense.currency}
+              </Text>
+              <Icon name="arrow-drop-down" size={24} color="#555" />
+            </TouchableOpacity>
+
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={[styles.button, styles.cancelButton]}
@@ -351,48 +339,92 @@ const ExpenseList = () => {
         </View>
       </Modal>
 
+      {/* Modal para seleccionar moneda */}
       <Modal
-        visible={!!editingId}
-        animationType="slide"
+        visible={currencyModalVisible}
         transparent={true}
-        onRequestClose={() => setEditingId(null)}
+        animationType="fade"
+        onRequestClose={() => setCurrencyModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <TextInput
-              style={styles.input}
-              placeholder="Descripción"
-              value={editDescription}
-              onChangeText={setEditDescription}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Monto"
-              value={editAmount}
-              onChangeText={setEditAmount}
-              keyboardType="numeric"
-            />
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={[styles.button, styles.cancelButton]}
-                onPress={() => setEditingId(null)}
-              >
-                <Text style={styles.buttonText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.addButton]}
-                onPress={() => handleUpdateExpense()}
-                disabled={isSubmitting}
-              >
-                <Text style={styles.buttonText}>
-                  {isSubmitting ? "Guardando..." : "Actualizar"}
-                </Text>
-              </TouchableOpacity>
-            </View>
+        <View style={styles.currencyModalContainer}>
+          <View style={styles.currencyModalContent}>
+            <Text style={styles.currencyModalTitle}>Seleccionar Moneda</Text>
+            <Picker
+              selectedValue={newExpense.currency}
+              onValueChange={(itemValue) => {
+                setNewExpense({ ...newExpense, currency: itemValue });
+                setCurrencyModalVisible(false);
+              }}
+              style={styles.picker}
+            >
+              {Object.entries(currencies).map(([code, name]) => (
+                <Picker.Item
+                  key={code}
+                  label={`${code} - ${name}`}
+                  value={code}
+                />
+              ))}
+            </Picker>
+            <TouchableOpacity
+              style={styles.currencyCloseButton}
+              onPress={() => setCurrencyModalVisible(false)}
+            >
+              <Text style={styles.currencyCloseButtonText}>Cerrar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
+      {/* Modal para editar gasto */}
+      {editingId && (
+        <Modal
+          visible={!!editingId}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setEditingId(null)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Editar Gasto</Text>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Descripción"
+                value={editDescription}
+                onChangeText={setEditDescription}
+              />
+
+              <TextInput
+                style={styles.input}
+                placeholder="Monto"
+                value={editAmount}
+                onChangeText={setEditAmount}
+                keyboardType="numeric"
+              />
+
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity
+                  style={[styles.button, styles.cancelButton]}
+                  onPress={() => setEditingId(null)}
+                >
+                  <Text style={styles.buttonText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.button, styles.addButton]}
+                  onPress={handleUpdateExpense}
+                  disabled={isSubmitting}
+                >
+                  <Text style={styles.buttonText}>
+                    {isSubmitting ? "Guardando..." : "Actualizar"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Modal de confirmación para eliminar */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -427,5 +459,4 @@ const ExpenseList = () => {
     </View>
   );
 };
-
 export default ExpenseList;

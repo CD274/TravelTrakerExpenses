@@ -23,8 +23,8 @@ const OFFLINE_CATEGORIES_KEY = "@offline_categories";
 const OFFLINE_CATEGORIES_TO_DELETE = "@offline_categories_to_delete";
 
 // Guardar categoría (online/offline)
-export const saveCategory = async (category, isOnline) => {
-  if (!category.travelId || !category.userId || !category.name) {
+export const saveCategory = async (userID, category, isOnline) => {
+  if ((!category.travelId || !category.userId || !category.name, !userID)) {
     throw new Error("Category requires travelId, userId and name");
   }
   if (isOnline) {
@@ -59,7 +59,6 @@ export const deleteCategory = async (userId, categoryId, isOnline) => {
     await deleteCategoryLocal(categoryId);
   }
 };
-
 // Obtener todas las categorías de un usuario
 export const getCategories = async (userId, travelId = null) => {
   try {
@@ -81,7 +80,6 @@ export const getCategories = async (userId, travelId = null) => {
     return await fetchCategoriesLocal(travelId); // Fallback a local si hay error
   }
 };
-
 // Obtener gastos por categoría
 export const getExpensesByCategory = async (userId, categoryId) => {
   try {
@@ -98,7 +96,6 @@ export const getExpensesByCategory = async (userId, categoryId) => {
     return [];
   }
 };
-
 // Funciones Firebase
 const saveCategoryFirestore = async (category) => {
   try {
@@ -122,7 +119,6 @@ const saveCategoryFirestore = async (category) => {
     throw error;
   }
 };
-
 const updateCategoryFirestore = async (userId, categoryId, updates) => {
   try {
     const categoryRef = doc(db, "users", userId, "categories", categoryId);
@@ -135,7 +131,6 @@ const updateCategoryFirestore = async (userId, categoryId, updates) => {
     throw error;
   }
 };
-
 const deleteCategoryFirestore = async (userId, categoryId) => {
   try {
     // Verifica si el ID es un ID de Firestore (longitud 20)
@@ -152,7 +147,6 @@ const deleteCategoryFirestore = async (userId, categoryId) => {
     throw error;
   }
 };
-
 const fetchCategoriesFirestore = async (userId, travelId = null) => {
   try {
     const categoriesRef = collection(db, "users", userId, "categories");
@@ -172,7 +166,6 @@ const fetchCategoriesFirestore = async (userId, travelId = null) => {
     return [];
   }
 };
-
 // Funciones locales
 const saveCategoryLocal = async (category) => {
   try {
@@ -200,7 +193,6 @@ const saveCategoryLocal = async (category) => {
     throw error;
   }
 };
-
 const updateCategoryLocal = async (categoryId, updates) => {
   try {
     const categories = await fetchCategoriesLocal();
@@ -219,7 +211,6 @@ const updateCategoryLocal = async (categoryId, updates) => {
     throw error;
   }
 };
-
 const deleteCategoryLocal = async (categoryId) => {
   try {
     // Guardamos en una lista separada para eliminación posterior
@@ -233,7 +224,6 @@ const deleteCategoryLocal = async (categoryId) => {
         JSON.stringify([...parsedToDelete, categoryId])
       );
     }
-
     // Eliminamos de la lista principal (tanto Firestore como locales)
     const categories = await fetchCategoriesLocal();
     const updatedCategories = categories.filter(
@@ -248,7 +238,6 @@ const deleteCategoryLocal = async (categoryId) => {
     throw error;
   }
 };
-
 const fetchCategoriesLocal = async (travelId = null) => {
   try {
     const categories = await AsyncStorage.getItem(OFFLINE_CATEGORIES_KEY);
@@ -266,7 +255,6 @@ const fetchCategoriesLocal = async (travelId = null) => {
     return [];
   }
 };
-
 // Sincronización de datos locales con la nube
 export const syncLocalCategories = async (userId) => {
   try {

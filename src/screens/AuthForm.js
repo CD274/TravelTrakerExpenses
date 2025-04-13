@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect } from "react";
-import { TouchableOpacity, TextInput, Text, View } from "react-native";
+import { TouchableOpacity, TextInput, Text, View, Alert } from "react-native";
 import { AuthContext } from "../contexts/AuthContext";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -45,7 +45,7 @@ export default AuthForm = () => {
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
         <Text style={styles.title}>Bienvenido</Text>
-        
+
         <Text style={styles.inputLabel}>Correo electrónico</Text>
         <TextInput
           placeholder="ejemplo@correo.com"
