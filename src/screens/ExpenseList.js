@@ -16,7 +16,6 @@ import { useEntityManager } from "../hooks/useEntityManager";
 import DeletModal from "../components/DeletModal";
 import FAB from "../components/FAB";
 import ExpenseFormModal from "../components/ExpenseFormModal"; // Nuevo componente
-import CurrencyPickerModal from "../components/CurrencyPickerModal"; // Nuevo componente
 
 export default function ExpenseList() {
   const { user, userCurrency } = useContext(AuthContext);
@@ -51,6 +50,27 @@ export default function ExpenseList() {
       return true;
     },
   });
+  //mensaje de alerta en caso de que no se haya configurado la moneda
+  const handleAddPress = () => {
+    if (!userCurrency) {
+      Alert.alert(
+        "Moneda no configurada",
+        "Debes configurar tu moneda principal en los ajustes",
+        [
+          {
+            text: "Ir a Ajustes",
+            onPress: () => navigation.navigate("Settings"),
+          },
+          {
+            text: "Cancelar",
+            style: "cancel",
+          },
+        ]
+      );
+      return;
+    }
+    actions.setIsModalVisible(true);
+  };
 
   useEffect(() => {
     if (userCurrency) actions.loadData();
@@ -123,56 +143,44 @@ export default function ExpenseList() {
         }
       />
 
-      <FAB onPress={() => actions.setIsModalVisible(true)} />
+      <FAB onPress={handleAddPress} disabled={!userCurrency} />
 
-      <ExpenseFormModal
-        visible={states.isModalVisible}
-        onCurrencyPress={() => actions.setCurrencyModalVisible(true)}
-        initialData={{
-          description: "",
-          amount: "",
-          currency: userCurrency,
-          categoryId,
-          userId: user?.uid,
-        }}
-        onCancel={() => actions.setIsModalVisible(false)}
-        onSubmit={actions.handleAdd}
-        isSubmitting={states.isSubmitting}
-      />
+      {userCurrency && (
+        <>
+          <ExpenseFormModal
+            visible={states.isModalVisible}
+            onCurrencyPress={() => actions.setCurrencyModalVisible(true)}
+            initialData={{
+              description: "",
+              amount: "",
+              currency: userCurrency,
+              categoryId,
+              userId: user?.uid,
+            }}
+            onCancel={() => actions.setIsModalVisible(false)}
+            onSubmit={actions.handleAdd}
+            isSubmitting={states.isSubmitting}
+          />
 
-      <ExpenseFormModal
-        visible={!!states.editingId}
-        onCurrencyPress={() => actions.setCurrencyModalVisible(true)}
-        initialData={
-          states.items.find((e) => e.id === states.editingId) || {
-            // Fallback
-            description: "",
-            amount: 0,
-            currency: userCurrency,
-            categoryId,
-            userId: user?.uid,
-          }
-        }
-        onCancel={() => actions.setEditingId(null)}
-        onSubmit={(data) => actions.handleUpdate(states.editingId, data)}
-        isSubmitting={states.isSubmitting}
-        isEditMode
-      />
-
-      <CurrencyPickerModal
-        visible={states.currencyModalVisible}
-        onClose={() => actions.setCurrencyModalVisible(false)}
-        onSelect={(currency) => {
-          // Aquí aplicamos el fallback con la moneda del usuario
-          const selected = currency || userCurrency;
-          actions.setFormData((prev) => ({
-            ...prev,
-            currency: selected,
-          }));
-          actions.setCurrencyModalVisible(false);
-        }}
-        selectedCurrency={states.formData?.currency}
-      />
+          <ExpenseFormModal
+            visible={!!states.editingId}
+            onCurrencyPress={() => actions.setCurrencyModalVisible(true)}
+            initialData={
+              states.items.find((e) => e.id === states.editingId) || {
+                description: "",
+                amount: 0,
+                currency: userCurrency,
+                categoryId,
+                userId: user?.uid,
+              }
+            }
+            onCancel={() => actions.setEditingId(null)}
+            onSubmit={(data) => actions.handleUpdate(states.editingId, data)}
+            isSubmitting={states.isSubmitting}
+            isEditMode
+          />
+        </>
+      )}
 
       <DeletModal
         visible={states.deleteConfirmVisible}
@@ -181,6 +189,14 @@ export default function ExpenseList() {
         onCancel={() => actions.setDeleteConfirmVisible(false)}
         onConfirm={actions.handleDelete}
         isSubmitting={states.isSubmitting}
+        initialData={{
+          description: "",
+          amount: "",
+          currency: userCurrency,
+          categoryId,
+          userId: user?.uid,
+        }}
+        setFormData={actions.setFormData}
       />
     </View>
   );

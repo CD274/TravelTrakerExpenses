@@ -150,6 +150,7 @@ export default function CategoriesScreen() {
         onCancel={() => actions.setDeleteConfirmVisible(false)}
         onConfirm={actions.handleDelete}
         isSubmitting={states.isSubmitting}
+        setFormData={actions.setFormData}
       />
     </View>
   );

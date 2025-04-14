@@ -1,7 +1,17 @@
+// ExpenseFormModal.js
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, Modal } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Modal,
+  Alert,
+} from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { styles } from "../styles/ExpenseList.styles";
+import CurrencyPickerModal from "./CurrencyPickerModal";
+
 const ExpenseFormModal = ({
   visible,
   initialData = {},
@@ -9,23 +19,27 @@ const ExpenseFormModal = ({
   onSubmit,
   isSubmitting,
   isEditMode = false,
-  onCurrencyPress, // Nueva prop
 }) => {
   const [formData, setFormData] = useState({
     description: "",
     amount: "",
     currency: "USD",
-    ...initialData, // Spread después de los valores por defecto
+    ...initialData,
   });
+  const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
 
   useEffect(() => {
-    setFormData({
-      description: "",
-      amount: "",
-      currency: "USD",
-      ...initialData,
-    });
-  }, [initialData]);
+    // Resetear el formulario solo cuando se abre el modal
+    if (visible) {
+      setFormData({
+        description: "",
+        amount: "",
+        currency: "USD",
+        ...initialData,
+      });
+    }
+  }, [visible, initialData]); // Solo dependencias relevantes
+
   const handleSubmit = () => {
     const numericAmount = parseFloat(formData.amount);
     if (isNaN(numericAmount)) {
@@ -34,6 +48,7 @@ const ExpenseFormModal = ({
     }
     onSubmit({ ...formData, amount: numericAmount });
   };
+
   return (
     <Modal
       visible={visible}
@@ -61,15 +76,29 @@ const ExpenseFormModal = ({
             onChangeText={(text) =>
               setFormData((prev) => ({ ...prev, amount: text }))
             }
+            keyboardType="numeric"
           />
 
           <TouchableOpacity
             style={styles.currencySelector}
-            onPress={onCurrencyPress}
+            onPress={() => setCurrencyModalVisible(true)}
           >
             <Text style={styles.currencyText}>Moneda: {formData.currency}</Text>
             <Icon name="arrow-drop-down" size={24} color="#555" />
           </TouchableOpacity>
+
+          <CurrencyPickerModal
+            visible={currencyModalVisible}
+            onClose={() => setCurrencyModalVisible(false)}
+            onSelect={(currency) => {
+              setFormData((prev) => ({
+                ...prev,
+                currency: currency || prev.currency,
+              }));
+              setCurrencyModalVisible(false);
+            }}
+            selectedCurrency={formData.currency}
+          />
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity

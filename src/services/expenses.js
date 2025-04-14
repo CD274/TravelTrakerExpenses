@@ -339,6 +339,9 @@ export const convertAndSaveExpense = async (expense, userCurrency) => {
   if (!expense?.categoryId) {
     throw new Error("Expense must have a categoryId");
   }
+  if (!expense?.amount) {
+    throw new Error("Expense must have a amount");
+  }
 
   if (expense.currency === userCurrency) {
     return await saveExpense(expense, true);

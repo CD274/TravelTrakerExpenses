@@ -13,6 +13,13 @@ const FALLBACK_RATES = {
 };
 
 export const convertCurrency = async (from, to, amount) => {
+  from = (from || "").toUpperCase().trim();
+  to = (to || "").toUpperCase().trim();
+
+  if (!from || !to) {
+    console.error("Códigos de moneda inválidos");
+    return 0;
+  }
   // Validaciones básicas
   if (isNaN(amount) || amount === null || amount === undefined) {
     console.error("El monto debe ser un número válido.");
@@ -36,7 +43,7 @@ export const convertCurrency = async (from, to, amount) => {
 
   // 2. Intentar con API externa
   try {
-    const API_KEY = "fe1f1f620204c8a107cb2292"; // API key de ejemplo
+    const API_KEY = "fe1f1f620204c8a107cb2292";
     const response = await fetch(
       `https://v6.exchangerate-api.com/v6/${API_KEY}/pair/${from}/${to}/${amount}`
     );

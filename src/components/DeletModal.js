@@ -1,10 +1,7 @@
 import React from "react";
 import { Modal, View, Text, TouchableOpacity } from "react-native";
 import { styles } from "../styles/ModalsStyles";
-const handleCancel = () => {
-  setFormData(initialData);
-  onCancel();
-};
+
 const DeletModal = ({
   visible,
   title,
@@ -12,7 +9,17 @@ const DeletModal = ({
   onCancel,
   onConfirm,
   isSubmitting,
+  initialData, // Añadimos esta prop
+  setFormData, // Añadimos esta prop
 }) => {
+  // Movemos la función handleCancel dentro del componente
+  const handleCancel = () => {
+    if (setFormData && initialData) {
+      setFormData(initialData);
+    }
+    onCancel();
+  };
+
   return (
     <Modal
       animationType="fade"

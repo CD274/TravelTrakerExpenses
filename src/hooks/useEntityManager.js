@@ -14,6 +14,7 @@ export const useEntityManager = (entityConfig) => {
     additionalParams = {},
     navigation,
     route,
+    customValidation,
   } = entityConfig;
 
   // Estados comunes
@@ -31,6 +32,7 @@ export const useEntityManager = (entityConfig) => {
     currency: "USD",
     ...entityConfig.additionalParams,
   });
+
   // Cargar datos
   const loadData = async () => {
     if (!user) return;
@@ -51,18 +53,18 @@ export const useEntityManager = (entityConfig) => {
     }
   };
 
-  // Operaciones CRUD
-  const handleAdd = async (formData) => {
-    if (isSubmitting || !validateForm(formData)) return;
+  // Función base para guardar
+  const baseHandleAdd = async (data) => {
+    if (isSubmitting || (customValidation && !customValidation(data))) return;
 
     try {
       setIsSubmitting(true);
       const completeData = {
-        ...formData,
-        userId: user.uid, // Asegurar que userId está incluido
+        ...data,
+        userId: user.uid,
         ...additionalParams,
       };
-      await saveService(user.uid, completeData, true); // Pasar user.uid como primer parámetro
+      await saveService(user.uid, completeData, true);
       setIsModalVisible(false);
       loadData();
     } catch (error) {
@@ -71,8 +73,10 @@ export const useEntityManager = (entityConfig) => {
       setIsSubmitting(false);
     }
   };
-  const enhancedHandleAdd = async (data) => {
-    if (isSubmitting || !entityConfig.customValidation?.(data)) return;
+
+  // Función especializada para gastos
+  const expenseHandleAdd = async (data) => {
+    if (isSubmitting || (customValidation && !customValidation(data))) return;
 
     try {
       setIsSubmitting(true);
@@ -81,14 +85,14 @@ export const useEntityManager = (entityConfig) => {
         userId: user.uid,
         ...additionalParams,
         createdAt: new Date().toISOString(),
+        currency: data.currency || additionalParams.userCurrency, // <-- Añade esto
       };
 
-      if (entityName === "gasto") {
-        await saveService(completeData, additionalParams.defaultCurrency);
-      } else {
-        await saveService(completeData);
-      }
-
+      // Asegúrate que defaultCurrency tiene valor
+      const defaultCurrency =
+        additionalParams.defaultCurrency || additionalParams.userCurrency;
+      console.log("DEFAULT CURRENCY:" + defaultCurrency);
+      await saveService(completeData, defaultCurrency); // <-- Pasa la moneda correcta
       setIsModalVisible(false);
       loadData();
     } catch (error) {
@@ -97,6 +101,10 @@ export const useEntityManager = (entityConfig) => {
       setIsSubmitting(false);
     }
   };
+
+  // Determina qué función de guardado usar
+  const handleAdd = entityName === "gasto" ? expenseHandleAdd : baseHandleAdd;
+
   const handleUpdate = async (id, data) => {
     if (isSubmitting || !validateForm(data)) return;
 
@@ -115,6 +123,7 @@ export const useEntityManager = (entityConfig) => {
       setIsSubmitting(false);
     }
   };
+
   const handleDelete = async () => {
     if (isSubmitting) return;
 
@@ -150,6 +159,18 @@ export const useEntityManager = (entityConfig) => {
 
   // Helpers
   const validateForm = (data) => {
+    // Validación específica para gastos
+    if (entityName === "gasto") {
+      if (!data?.description?.trim()) {
+        Alert.alert("Error", "La descripción es requerida");
+        return false;
+      }
+      if (!data?.amount || isNaN(data.amount)) {
+        Alert.alert("Error", "Monto inválido");
+        return false;
+      }
+      return true;
+    }
     if (!data?.name?.trim()) {
       Alert.alert("Error", `El nombre de la ${entityName} es requerido`);
       return false;
@@ -177,7 +198,7 @@ export const useEntityManager = (entityConfig) => {
     },
     actions: {
       loadData,
-      handleAdd,
+      handleAdd, // Usamos la función determinada
       handleUpdate,
       handleDelete,
       handleSync,
