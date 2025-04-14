@@ -1,64 +1,82 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet } from "react-native";
 
 export const styles = StyleSheet.create({
   container: {
-    padding: 20,
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#011C40", // color más oscuro para el fondo
+    padding: 20,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: "bold",
+    color: "#A7EBF2", // color claro para el título
+    marginBottom: 10,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: "#54ACBF", // tono intermedio
+    marginBottom: 20,
+  },
+  inputContainer: {
+    marginBottom: 15,
+  },
+  inputLabel: {
+    fontSize: 14,
+    color: "#A7EBF2", // mismo que título
+    marginBottom: 5,
   },
   input: {
-    marginBottom: 15,
+    backgroundColor: "#023859",
+    color: "#A7EBF2",
+    borderRadius: 10,
     padding: 12,
-    borderWidth: 1,
-    borderColor: '#e1e1e1',
-    borderRadius: 8,
-    backgroundColor: '#f8f9fa',
     fontSize: 16,
-    color: '#333',
+  },
+  divider: {
+    height: 20,
   },
   button: {
     padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    borderRadius: 12,
+    alignItems: "center",
   },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  loginButton: {
-    backgroundColor: '#007bff',
-  },
-  registerButton: {
-    backgroundColor: '#28a745',
+  primaryButton: {
+    backgroundColor: "#26658C", // azul medio para botón
   },
   disabledButton: {
-    backgroundColor: '#cccccc',
+    backgroundColor: "#023859",
+    opacity: 0.6,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 20,
-    textAlign: 'center',
+  buttonText: {
+    color: "#A7EBF2",
+    fontSize: 16,
+    fontWeight: "600",
   },
-  errorText: {
-    color: '#dc3545',
+  switchText: {
+    color: "#A7EBF2",
+    textAlign: "center",
+    marginTop: 10,
+  },
+  switchLink: {
+    color: "#54ACBF",
+    fontWeight: "bold",
+  },
+  sectionTitle: {
+    fontSize: 22,
+    color: "#A7EBF2",
+    fontWeight: "bold",
     marginBottom: 10,
-    textAlign: 'center',
   },
-  inputLabel: {
-    marginBottom: 5,
-    color: '#666',
-    fontSize: 14,
+  switchButton: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "#023859",
+    alignItems: "center",
+  },
+  switchButtonText: {
+    color: "#A7EBF2",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
