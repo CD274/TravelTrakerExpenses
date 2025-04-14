@@ -7,7 +7,7 @@ import {
   getTravel,
   syncLocalTravel,
   updateTravel,
-  deleteTravel,
+  deleteTravelLocal,
 } from "../services/travels";
 
 import { useEntityManager } from "../hooks/useEntityManager";
@@ -25,13 +25,17 @@ export default function TravelsScreen() {
     loadService: getTravel,
     saveService: saveTravel,
     updateService: updateTravel,
-    deleteService: deleteTravel,
+    deleteService: deleteTravelLocal,
     syncService: syncLocalTravel,
     navigation,
   });
   useEffect(() => {
-    actions.loadData();
-  }, []);
+    const refreshOnFocus = navigation.addListener("focus", () => {
+      actions.loadData();
+    });
+
+    return refreshOnFocus;
+  }, [navigation]);
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
@@ -42,7 +46,7 @@ export default function TravelsScreen() {
         >
           <MaterialIcons
             name="sync"
-            size={24}
+            size={30}
             color={states.isSubmitting ? "#ccc" : "#007bff"}
           />
         </TouchableOpacity>
@@ -100,7 +104,7 @@ export default function TravelsScreen() {
       <FlatList
         data={states.items}
         renderItem={renderTravel}
-        keyExtractor={(item) => item.id || Math.random().toString()}
+        keyExtractor={(item) => item.id || item.localId}
         contentContainerStyle={styles.listContainer}
         refreshing={states.isRefreshing}
         onRefresh={actions.loadData}

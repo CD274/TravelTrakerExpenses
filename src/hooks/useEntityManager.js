@@ -1,9 +1,11 @@
 import { useState, useEffect, useContext } from "react";
 import { Alert } from "react-native";
 import { AuthContext } from "../contexts/AuthContext";
+import NetInfo from "@react-native-community/netinfo";
 
 export const useEntityManager = (entityConfig) => {
   const { user } = useContext(AuthContext);
+  const [isOnline, setIsOnline] = useState(true);
   const {
     entityName,
     loadService,
@@ -33,7 +35,19 @@ export const useEntityManager = (entityConfig) => {
     ...entityConfig.additionalParams,
   });
 
-  // Cargar datos
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOnline(state.isConnected);
+    });
+
+    NetInfo.fetch().then((state) => {
+      setIsOnline(state.isConnected);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Cargar datos (ahora maneja online/offline automáticamente)
   const loadData = async () => {
     if (!user) return;
 
@@ -53,7 +67,7 @@ export const useEntityManager = (entityConfig) => {
     }
   };
 
-  // Función base para guardar
+  // Función base para guardar (ahora maneja online/offline)
   const baseHandleAdd = async (data) => {
     if (isSubmitting || (customValidation && !customValidation(data))) return;
 
@@ -64,7 +78,8 @@ export const useEntityManager = (entityConfig) => {
         userId: user.uid,
         ...additionalParams,
       };
-      await saveService(user.uid, completeData, true);
+      // Pasamos el estado de conexión al servicio
+      await saveService(user.uid, completeData, isOnline);
       setIsModalVisible(false);
       loadData();
     } catch (error) {
@@ -74,7 +89,7 @@ export const useEntityManager = (entityConfig) => {
     }
   };
 
-  // Función especializada para gastos
+  // Función especializada para gastos (ahora maneja online/offline)
   const expenseHandleAdd = async (data) => {
     if (isSubmitting || (customValidation && !customValidation(data))) return;
 
@@ -85,14 +100,14 @@ export const useEntityManager = (entityConfig) => {
         userId: user.uid,
         ...additionalParams,
         createdAt: new Date().toISOString(),
-        currency: data.currency || additionalParams.userCurrency, // <-- Añade esto
+        currency: data.currency || additionalParams.userCurrency,
       };
 
-      // Asegúrate que defaultCurrency tiene valor
       const defaultCurrency =
         additionalParams.defaultCurrency || additionalParams.userCurrency;
-      console.log("DEFAULT CURRENCY:" + defaultCurrency);
-      await saveService(completeData, defaultCurrency); // <-- Pasa la moneda correcta
+
+      // Pasamos el estado de conexión al servicio
+      await saveService(completeData, defaultCurrency, isOnline);
       setIsModalVisible(false);
       loadData();
     } catch (error) {
@@ -105,6 +120,7 @@ export const useEntityManager = (entityConfig) => {
   // Determina qué función de guardado usar
   const handleAdd = entityName === "gasto" ? expenseHandleAdd : baseHandleAdd;
 
+  // Actualizar (ahora maneja online/offline)
   const handleUpdate = async (id, data) => {
     if (isSubmitting || !validateForm(data)) return;
 
@@ -114,7 +130,8 @@ export const useEntityManager = (entityConfig) => {
         ...data,
         userId: user.uid,
       };
-      await updateService(user.uid, id, updateData, true);
+      // Pasamos el estado de conexión al servicio
+      await updateService(user.uid, id, updateData, isOnline);
       setEditingId(null);
       loadData();
     } catch (error) {
@@ -124,12 +141,14 @@ export const useEntityManager = (entityConfig) => {
     }
   };
 
+  // Eliminar (ahora maneja online/offline)
   const handleDelete = async () => {
     if (isSubmitting) return;
 
     try {
       setIsSubmitting(true);
-      await deleteService(user.uid, entityToDelete, true);
+      // Pasamos el estado de conexión al servicio
+      await deleteService(user.uid, entityToDelete, isOnline);
       setDeleteConfirmVisible(false);
       setEntityToDelete(null);
       loadData();
@@ -139,27 +158,37 @@ export const useEntityManager = (entityConfig) => {
       setIsSubmitting(false);
     }
   };
-
-  // Sincronización
+  // Sincronización mejorada
   const handleSync = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting) {
+      Alert.alert("Información", "Ya hay una sincronización en progreso");
+      return;
+    }
+
+    if (!isOnline) {
+      Alert.alert("Información", "No hay conexión a internet para sincronizar");
+      return;
+    }
 
     try {
       setIsSubmitting(true);
+
+      // 1. Sincronizar todos los datos locales con Firestore
       await syncService(user.uid);
-      loadData();
-      Alert.alert("Éxito", `${entityName} sincronizados correctamente`);
+
+      // 2. Recargar datos actualizados desde todas las fuentes
+      await loadData();
+
+      console.log("Éxito", "Datos sincronizados correctamente");
     } catch (error) {
-      Alert.alert("Error", `No se pudieron sincronizar los ${entityName}`);
-      console.error(error);
+      Alert.alert("Error", `Error durante la sincronización: ${error.message}`);
+      console.error("Sync error:", error);
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  // Helpers
+  // Helpers (sin cambios)
   const validateForm = (data) => {
-    // Validación específica para gastos
     if (entityName === "gasto") {
       if (!data?.description?.trim()) {
         Alert.alert("Error", "La descripción es requerida");
@@ -195,10 +224,11 @@ export const useEntityManager = (entityConfig) => {
       user,
       currencyModalVisible,
       formData,
+      isOnline, // Ahora exponemos el estado de conexión
     },
     actions: {
       loadData,
-      handleAdd, // Usamos la función determinada
+      handleAdd,
       handleUpdate,
       handleDelete,
       handleSync,

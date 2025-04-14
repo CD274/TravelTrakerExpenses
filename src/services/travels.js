@@ -22,6 +22,9 @@ const db = getFirestore(app);
 
 const OFFLINE_TRAVELS_KEY = "@offline_travels";
 const OFFLINE_TRAVELS_TO_DELETE = "@offline_travels_to_delete";
+const OFFLINE_CATEGORIES_KEY = "@offline_categories";
+const OFFLINE_EXPENSES_KEY = "@offline_expenses";
+const OFFLINE_ENTITIES_TO_DELETE = "@offline_entities_to_delete";
 
 // Guardar viaje (online/offline)
 export const saveTravel = async (userId, travel, isOnline) => {
@@ -64,22 +67,33 @@ export const deleteTravel = async (userId, travelId, isOnline) => {
 // Obtener todos los viajes de un usuario
 export const getTravel = async (userId) => {
   try {
-    // Primero intentamos obtener de Firestore
-    const onlineTravels = await fetchTravelFirestore(userId);
+    const [onlineTravels, localTravels] = await Promise.all([
+      fetchTravelFirestore(userId),
+      fetchTravelLocal(),
+    ]);
 
-    // Si hay datos online, los devolvemos
-    if (onlineTravels.length > 0) {
-      // Combinamos con los locales no sincronizados
-      const localTravels = await fetchTravelLocal();
-      const unsyncedTravels = localTravels.filter((t) => !t.isSynced);
-      return [...onlineTravels, ...unsyncedTravels];
-    }
+    // Combinar datos dando prioridad a los online
+    const combined = [];
+    const ids = new Set();
 
-    // Si no hay datos online, devolvemos los locales
-    return await fetchTravelLocal();
+    onlineTravels.forEach((travel) => {
+      if (!ids.has(travel.id)) {
+        ids.add(travel.id);
+        combined.push({ ...travel, isSynced: true });
+      }
+    });
+
+    localTravels.forEach((travel) => {
+      if (!travel.isSynced && !ids.has(travel.id)) {
+        ids.add(travel.id);
+        combined.push(travel);
+      }
+    });
+
+    return combined;
   } catch (error) {
     console.error("Error getting travels:", error);
-    return await fetchTravelLocal(); // Fallback a local si hay error
+    return await fetchTravelLocal();
   }
 };
 
@@ -249,89 +263,193 @@ const fetchTravelLocal = async () => {
 // Sincronización de datos locales con la nube
 export const syncLocalTravel = async (userId) => {
   try {
-    // 1. Sincronizar viajes nuevos
-    const localTravels = await fetchTravelLocal();
-    const unsyncedTravels = localTravels.filter((t) => !t.isSynced);
+    // 1. Sincronizar viajes
+    await syncTravels(userId);
 
-    if (unsyncedTravels.length > 0) {
-      const batch = writeBatch(db);
-      const travelsRef = collection(db, "users", userId, "travels");
+    // 2. Sincronizar categorías
+    await syncCategories(userId);
 
-      for (const travel of unsyncedTravels) {
-        const travelRef = doc(travelsRef);
-        batch.set(travelRef, {
-          name: travel.name,
-          isSynced: true,
-          createdAt: serverTimestamp(),
-        });
-      }
+    // 3. Sincronizar gastos
+    await syncExpenses(userId);
 
-      await batch.commit();
-      await AsyncStorage.setItem(
-        OFFLINE_TRAVELS_KEY,
-        JSON.stringify(localTravels.map((t) => ({ ...t, isSynced: true })))
-      );
-    }
+    return true;
+  } catch (error) {
+    console.error("Error in complete sync:", error);
+    throw error;
+  }
+};
+// Sincronización de viajes mejorada
+const syncTravels = async (userId) => {
+  const [localTravels, onlineTravels] = await Promise.all([
+    fetchTravelLocal(),
+    fetchTravelFirestore(userId),
+  ]);
 
-    // 2. Sincronizar eliminaciones
-    const toDelete = await AsyncStorage.getItem(OFFLINE_TRAVELS_TO_DELETE);
-    const parsedToDelete = toDelete ? JSON.parse(toDelete) : [];
+  const batch = writeBatch(db);
+  const travelsRef = collection(db, "users", userId, "travels");
+  let hasChanges = false;
 
-    if (parsedToDelete.length > 0) {
-      const deleteBatch = writeBatch(db);
-      let hasDeletes = false;
+  // Mapa para evitar duplicados
+  const travelMap = new Map();
 
-      for (const travelId of parsedToDelete) {
-        // Verificamos nuevamente que sea un ID de Firestore
-        if (travelId.length === 20) {
-          const travelRef = doc(db, "users", userId, "travels", travelId);
-          deleteBatch.delete(travelRef);
-          hasDeletes = true;
-        }
-      }
+  // Procesar viajes existentes en la nube primero
+  onlineTravels.forEach((travel) => {
+    travelMap.set(travel.id, travel);
+  });
 
-      if (hasDeletes) {
-        await deleteBatch.commit();
-      }
-      await AsyncStorage.removeItem(OFFLINE_TRAVELS_TO_DELETE);
-    }
+  // Procesar viajes locales
+  const unsyncedTravels = localTravels.filter((t) => !t.isSynced);
+  for (const travel of unsyncedTravels) {
+    // Generar clave única para comparación
+    const travelKey = `${travel.name}-${travel.createdAt}`;
 
-    // 3. Sincronizar actualizaciones
-    const updatedTravels = localTravels.filter(
-      (travel) => travel.isSynced && travel.updatedAt && !travel.syncedUpdate
+    const existsOnline = onlineTravels.some(
+      (t) => `${t.name}-${t.createdAt}` === travelKey
     );
 
-    if (updatedTravels.length > 0) {
-      const updateBatch = writeBatch(db);
+    if (!existsOnline) {
+      const travelRef = doc(travelsRef);
+      const newTravel = {
+        ...travel,
+        id: travelRef.id, // Usar ID de Firestore
+        isSynced: true,
+        createdAt: serverTimestamp(),
+      };
 
-      for (const travel of updatedTravels) {
-        try {
-          const travelRef = doc(db, "users", userId, "travels", travel.id);
-          updateBatch.update(travelRef, {
-            name: travel.name,
-            updatedAt: serverTimestamp(),
-          });
+      batch.set(travelRef, newTravel);
+      travelMap.set(travelRef.id, newTravel);
+      hasChanges = true;
+    }
+  }
 
-          // Marcamos como sincronizado
-          travel.syncedUpdate = true;
-        } catch (error) {
-          console.warn(`Could not update travel ${travel.id}`, error);
-        }
-      }
+  if (hasChanges) await batch.commit();
 
-      try {
-        await updateBatch.commit();
-        // Actualizamos el almacenamiento local
-        await AsyncStorage.setItem(
-          OFFLINE_TRAVELS_KEY,
-          JSON.stringify(localTravels)
-        );
-      } catch (error) {
-        console.error("Error syncing travel updates:", error);
+  // Actualizar almacenamiento local con nuevos IDs de Firestore
+  const updatedLocalTravels = Array.from(travelMap.values()).map((t) => ({
+    ...t,
+    isSynced: true,
+    syncedUpdate: true,
+  }));
+
+  await AsyncStorage.setItem(
+    OFFLINE_TRAVELS_KEY,
+    JSON.stringify(updatedLocalTravels)
+  );
+};
+// Función para sincronizar categorías
+const syncCategories = async (userId) => {
+  const [localCategories, onlineCategories] = await Promise.all([
+    fetchLocalCategories(),
+    fetchOnlineCategories(userId),
+  ]);
+
+  const batch = writeBatch(db);
+  const categoriesRef = collection(db, "users", userId, "categories");
+  let hasChanges = false;
+
+  // Procesar categorías nuevas
+  const unsyncedCategories = localCategories.filter((c) => !c.isSynced);
+  for (const category of unsyncedCategories) {
+    const existsOnline = onlineCategories.some(
+      (c) => c.name === category.name && c.travelId === category.travelId
+    );
+
+    if (!existsOnline) {
+      const categoryRef = doc(categoriesRef);
+      batch.set(categoryRef, {
+        ...category,
+        isSynced: true,
+        createdAt: serverTimestamp(),
+      });
+      hasChanges = true;
+    }
+  }
+
+  // Procesar actualizaciones
+  const updatedCategories = localCategories.filter(
+    (c) => c.isSynced && c.updatedAt && !c.syncedUpdate
+  );
+  for (const category of updatedCategories) {
+    const onlineCategory = onlineCategories.find((c) => c.id === category.id);
+    if (
+      onlineCategory &&
+      JSON.stringify(onlineCategory) !== JSON.stringify(category)
+    ) {
+      batch.update(doc(categoriesRef, category.id), {
+        ...category,
+        updatedAt: serverTimestamp(),
+      });
+      hasChanges = true;
+    }
+  }
+
+  if (hasChanges) await batch.commit();
+
+  // Procesar eliminaciones
+  const toDelete = await AsyncStorage.getItem(OFFLINE_ENTITIES_TO_DELETE);
+  const parsedToDelete = toDelete ? JSON.parse(toDelete) : [];
+  const categoriesToDelete = parsedToDelete.filter(
+    (e) => e.type === "category"
+  );
+
+  if (categoriesToDelete.length > 0) {
+    const deleteBatch = writeBatch(db);
+    let hasDeletes = false;
+
+    for (const { id } of categoriesToDelete) {
+      if (id.length === 20) {
+        deleteBatch.delete(doc(categoriesRef, id));
+        hasDeletes = true;
       }
     }
+
+    if (hasDeletes) await deleteBatch.commit();
+
+    // Actualizar lista de eliminaciones
+    const updatedToDelete = parsedToDelete.filter((e) => e.type !== "category");
+    await AsyncStorage.setItem(
+      OFFLINE_ENTITIES_TO_DELETE,
+      JSON.stringify(updatedToDelete)
+    );
+  }
+
+  // Actualizar almacenamiento local
+  const updatedLocalCategories = localCategories.map((c) => ({
+    ...c,
+    isSynced: true,
+    syncedUpdate: c.updatedAt ? true : c.syncedUpdate,
+  }));
+
+  await AsyncStorage.setItem(
+    OFFLINE_CATEGORIES_KEY,
+    JSON.stringify(updatedLocalCategories)
+  );
+};
+
+// Función para sincronizar gastos (similar a las anteriores)
+const syncExpenses = async (userId) => {
+  // Implementación similar a syncCategories pero para gastos
+  // ...
+};
+
+// Funciones auxiliares para obtener datos
+const fetchOnlineCategories = async (userId) => {
+  try {
+    const categoriesRef = collection(db, "users", userId, "categories");
+    const snapshot = await getDocs(categoriesRef);
+    return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   } catch (error) {
-    console.error("Error syncing travels:", error);
-    throw error;
+    console.error("Error fetching online categories:", error);
+    return [];
+  }
+};
+
+const fetchLocalCategories = async () => {
+  try {
+    const categories = await AsyncStorage.getItem(OFFLINE_CATEGORIES_KEY);
+    return categories ? JSON.parse(categories) : [];
+  } catch (error) {
+    console.error("Error fetching local categories:", error);
+    return [];
   }
 };

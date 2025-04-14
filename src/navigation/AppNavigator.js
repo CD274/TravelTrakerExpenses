@@ -1,24 +1,43 @@
 import { createStackNavigator } from "@react-navigation/stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { NavigationContainer } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons"; // Asegúrate de instalar @expo/vector-icons
+import { Ionicons } from "@expo/vector-icons";
+import { TouchableOpacity } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import AuthForm from "../screens/AuthForm";
 import TravelsScreen from "../screens/TravelsList";
 import CategoriesScreen from "../screens/CatList";
 import CategoryExpensesScreen from "../screens/ExpenseList";
-import SettingsScreen from "../screens/SettingsScreen"; // Crea este componente
+import SettingsScreen from "../screens/SettingsScreen";
+import { AuthContext } from "../contexts/AuthContext";
+import React, { useContext } from "react";
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Creamos un Stack Navigator para las pantallas principales
 function MainStack() {
+  const { logout } = useContext(AuthContext);
+  const navigation = useNavigation();
+
+  const handleLogout = () => {
+    logout(); // Ejecuta la función de logout del contexto
+    navigation.navigate("Auth"); // Redirige a la pantalla de login
+  };
+
   return (
     <Stack.Navigator>
       <Stack.Screen
         name="Travels"
         component={TravelsScreen}
-        options={{ title: "Mis Viajes" }}
+        options={{
+          title: "Mis Viajes",
+          headerLeft: () => (
+            <TouchableOpacity onPress={handleLogout} style={{ marginLeft: 15 }}>
+              <Ionicons name="log-out-outline" size={30} color="#2e86de" />
+            </TouchableOpacity>
+          ),
+          headerTitleAlign: "center",
+        }}
       />
       <Stack.Screen
         name="TravelCategories"
@@ -26,6 +45,7 @@ function MainStack() {
         options={({ route }) => ({
           title: route.params.travelName || "Categorías",
           headerBackTitle: "Atrás",
+          headerTitleAlign: "center",
         })}
       />
       <Stack.Screen
@@ -34,13 +54,13 @@ function MainStack() {
         options={({ route }) => ({
           title: route.params.categoryName || "Gastos",
           headerBackTitle: "Atrás",
+          headerTitleAlign: "center",
         })}
       />
     </Stack.Navigator>
   );
 }
 
-// Creamos el Tab Navigator que contendrá nuestras pestañas
 function AppTabs() {
   return (
     <Tab.Navigator
