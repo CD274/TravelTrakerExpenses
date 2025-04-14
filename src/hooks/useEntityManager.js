@@ -24,7 +24,13 @@ export const useEntityManager = (entityConfig) => {
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [entityToDelete, setEntityToDelete] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
+  const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
+  const [formData, setFormData] = useState({
+    description: "",
+    amount: "",
+    currency: "USD",
+    ...entityConfig.additionalParams,
+  });
   // Cargar datos
   const loadData = async () => {
     if (!user) return;
@@ -65,7 +71,32 @@ export const useEntityManager = (entityConfig) => {
       setIsSubmitting(false);
     }
   };
+  const enhancedHandleAdd = async (data) => {
+    if (isSubmitting || !entityConfig.customValidation?.(data)) return;
 
+    try {
+      setIsSubmitting(true);
+      const completeData = {
+        ...data,
+        userId: user.uid,
+        ...additionalParams,
+        createdAt: new Date().toISOString(),
+      };
+
+      if (entityName === "gasto") {
+        await saveService(completeData, additionalParams.defaultCurrency);
+      } else {
+        await saveService(completeData);
+      }
+
+      setIsModalVisible(false);
+      loadData();
+    } catch (error) {
+      handleError("guardar", error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
   const handleUpdate = async (id, data) => {
     if (isSubmitting || !validateForm(data)) return;
 
@@ -141,6 +172,8 @@ export const useEntityManager = (entityConfig) => {
       entityToDelete,
       isSubmitting,
       user,
+      currencyModalVisible,
+      formData,
     },
     actions: {
       loadData,
@@ -152,6 +185,8 @@ export const useEntityManager = (entityConfig) => {
       setIsModalVisible,
       setDeleteConfirmVisible,
       setEntityToDelete,
+      setCurrencyModalVisible,
+      setFormData,
     },
   };
 };
